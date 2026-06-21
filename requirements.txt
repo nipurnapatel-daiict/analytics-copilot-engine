@@ -1,0 +1,33 @@
+# MANDATORY CORES
+langchain==0.3.17
+langchain-aws==0.2.2
+langchain-community==0.3.16
+langchain-core==0.3.33
+langchain-text-splitters==0.3.5
+langfuse==2.59.2
+
+# ENVIRONMENT UTILITIES 
+langgraph
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+python-dotenv
+requests
+boto3
+
+# STORAGE DATABASE & SEARCH PERMANENCE CONNECTORS 
+sqlalchemy
+psycopg2-binary
+opensearch-py
+
+
+
+
+
+
+
+
+
+
+

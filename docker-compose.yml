@@ -1,0 +1,170 @@
+version: '3.9'
+
+services:
+
+  # Infrastructure 
+
+  opensearch-node:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: opensearch-node
+    restart: always
+    environment:
+      - cluster.name=opensearch-local-cluster
+      - node.name=opensearch-node
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - DISABLE_SECURITY_PLUGIN=true
+      - node.store.allow_mmap=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+    networks:
+      - analytics-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'status'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    container_name: opensearch-dashboards
+    restart: always
+    ports:
+      - "5601:5601"
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch-node:9200"]
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    depends_on:
+      opensearch-node:
+        condition: service_healthy
+    networks:
+      - analytics-net
+
+  postgres:
+    image: postgres:15
+    container_name: analytics-postgres
+    restart: always
+    environment:
+      - POSTGRES_DB=analytics_db
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - analytics-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d analytics_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Milestone 2 RAG Endpoint 
+
+  milestone2-api:
+    build:
+      context: ../milestone-02-rag-application
+      dockerfile: Dockerfile
+    container_name: analytics-rag-milestone-02
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../milestone-02-rag-application/.env
+    environment:
+      - OPENSEARCH_HOST=opensearch-node
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_URL=http://opensearch-node:9200
+    depends_on:
+      opensearch-node:
+        condition: service_healthy
+    networks:
+      - analytics-net
+    # This maps container localhost:9200 to opensearch-node:9200
+    entrypoint: >
+      sh -c "
+      apt-get update && apt-get install -y socat || apk add socat || true;
+      socat TCP-LISTEN:9200,fork TCP:opensearch-node:9200 &
+      exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.connect(('0.0.0.0', 8000))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  # Milestone 3 Orchestrator Services 
+
+  milestone3-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: analytics-fastapi
+    restart: always
+    ports:
+      - "8050:8050"
+    env_file:
+      - .env                         
+    environment:
+      - OPENSEARCH_HOST=opensearch-node
+      - OPENSEARCH_PORT=9200
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=analytics_db
+      - POSTGRES_HOST=analytics-postgres      
+      - POSTGRES_PORT=5432         
+      - RAG_API_BASE_URL=http://analytics-rag-milestone-02:8000/rag-app/v1/ask
+    depends_on:
+      opensearch-node:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      milestone2-api:
+        condition: service_healthy
+    networks:
+      - analytics-net
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8050
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.connect(('127.0.0.1', 8050))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  milestone3-streamlit:
+    build:
+      context: ./streamlit_app
+      dockerfile: Dockerfile
+    container_name: analytics-streamlit
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://milestone3-api:8050
+    depends_on:
+      milestone3-api:
+        condition: service_healthy
+    networks:
+      - analytics-net
+
+networks:
+  analytics-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  opensearch_data:
+    driver: local
