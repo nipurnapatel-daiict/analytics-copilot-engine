@@ -1,0 +1,29 @@
+#  SENSITIVE DATA & CREDENTIALS 
+.env
+.env.local
+*.pem
+*.key
+
+# PYTHON CODE GARBAGE & CACHES 
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# VIRTUAL ENVIRONMENTS
+.venv/
+venv/
+ENV/
+env/
+
+# DOCKER & SYSTEM JUNK 
+.docker/
+.DS_Store
+Thumbs.db
+
+logs/
+.logs
